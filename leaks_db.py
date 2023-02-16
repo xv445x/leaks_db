@@ -48,8 +48,8 @@ def ddbb_upi(u,p):
 				errors.append(u + ':' + p)
 				print(e)
 				test = 1
-			cur.close()
-			con.close()
+	cur.close()
+	con.close()
 
 def ddbb_search(args_s):
 	test = "SELECT * FROM leaks WHERE user LIKE '%{}%' OR pass LIKE '%{}%'".format(args_s, args_s)
