@@ -3,8 +3,8 @@ from sys import argv
 from argparse import ArgumentParser
 import os
 from progress.bar import Bar, ChargingBar
-from multiprocessing import Process
-
+import threading
+from time import sleep
 
 parser = ArgumentParser(description='procesa archivos a la base de datos sqlite3 creada llamada leaks.db')
 parser.add_argument('-f', help='Archivo para parsear', type=str)
@@ -13,6 +13,7 @@ parser.add_argument('-su', help='Buscar en la BBDD por un string en el campo de 
 parser.add_argument('-sp', help='Buscar en la BBDD por un string en el campo de credenciales', type=str, default = '')
 parser.add_argument('--create', help='Crear una BBDD', action='store_true')
 parser.add_argument('--num', help='Numero de credenciales almacenadas', action='store_true')
+parser.add_argument('-T', help='Numero de threads, por defecto 1', type=int, default=1)
 
 args = parser.parse_args()
 
@@ -29,34 +30,26 @@ def consult_ddbb(consult):
 def ddbb_upi(u,p):
 	con = sqlite3.connect("leaks.db")
 	cur = con.cursor()
-	if "'" in p or "'" in u:
-		test = 'SELECT id FROM leaks WHERE user = "{}" AND pass = "{}"'.format(u, p)
-		inserting = 'INSERT INTO leaks (user, pass, list) VALUES ("{}", "{}", "{}")'.format(u, p, args.f)
-	elif '"' in p or '"' in u:
-		test = "SELECT id FROM leaks WHERE user = '{}' AND pass = '{}'".format(u, p)
-		inserting = "INSERT INTO leaks (user, pass, list) VALUES ('{}', '{}', '{}')".format(u, p, args.f)
-	elif ("'" in p or '"' in p) and ("'" in u or '"' in u):
-		test = 'SELECT id FROM leaks WHERE user = "{}" AND pass = "{}"'.format(u.replace("'", "%27"), p.replace("'", "%27"))
-		inserting = 'INSERT INTO leaks (user, pass, list) VALUES ("{}", "{}", "{}")'.format(u.replace("'", "%27"), p.replace("'", "%27"), args.f)	
-		#cur.execute('UPDATE leaks SET pass = replace(pass, "%27", "\'")')
-		con.commit()
-	else:
-		test = 'SELECT id FROM leaks WHERE user = "{}" AND pass = "{}"'.format(u, p)
-		inserting = 'INSERT INTO leaks (user, pass, list) VALUES ("{}", "{}", "{}")'.format(u, p, args.f)
-	
-	try:
-		res = cur.execute(test)
-		if res.fetchone():
-			count_exists.append(u + p)
-		else:
-			cur.execute(inserting)
-			count_new.append(u + p)
-			con.commit()
-	except:
-		errors.append(u + ':' + p)
-
-	cur.close()
-	con.close()
+	test = 0
+	while test == 0:
+		try:
+			res = cur.execute('SELECT id FROM leaks WHERE user = ? AND pass = ?', (u, p))
+			if res.fetchone():
+				count_exists.append(u + p)
+			else:
+				cur.execute('INSERT INTO leaks (user, pass, list) VALUES (?, ?, ?)', (u, p, args.f))
+				count_new.append(u + p)
+				con.commit()
+			test = 1
+		except Exception as e:
+			if  "database is locked"in str(e):
+				test = 0
+			else:
+				errors.append(u + ':' + p)
+				print(e)
+				test = 1
+			cur.close()
+			con.close()
 
 def ddbb_search(args_s):
 	test = "SELECT * FROM leaks WHERE user LIKE '%{}%' OR pass LIKE '%{}%'".format(args_s, args_s)
@@ -96,10 +89,14 @@ if __name__ == '__main__':
 		count_new = []
 		errors = []
 		for user_leak in ff:
-			if len(user_leak) > 3:
+			while threading.active_count() > args.T:
+				sleep(0.001)
+			if len(user_leak):
 				try:
 					us, ps = user_leak.split(":", 1)
-					ddbb_upi(us,ps)
+					t = threading.Thread(target=ddbb_upi, args=(us,ps))
+					t.start()
+					#ddbb_upi(us,ps)
 					bar.next()
 				except:
 					pass
