@@ -28,28 +28,29 @@ def consult_ddbb(consult):
 	return(res_r)
 
 def ddbb_upi(u,p):
-	con = sqlite3.connect("leaks.db")
-	cur = con.cursor()
-	test = 0
-	while test == 0:
-		try:
-			res = cur.execute('SELECT id FROM leaks WHERE user = ? AND pass = ?', (u, p))
-			if res.fetchone():
-				count_exists.append(u + p)
-			else:
-				cur.execute('INSERT INTO leaks (user, pass, list) VALUES (?, ?, ?)', (u, p, args.f))
-				count_new.append(u + p)
-				con.commit()
-			test = 1
-		except Exception as e:
-			if  "database is locked"in str(e):
-				test = 0
-			else:
-				errors.append(u + ':' + p)
-				print(e)
+		con = sqlite3.connect("leaks.db")
+		cur = con.cursor()
+		test = 0
+		while test == 0:
+			try:
+				res = cur.execute('SELECT id FROM leaks WHERE user = ? AND pass = ?', (u, p))
+				if res.fetchone():
+					count_exists.append(u + ":" + p)
+				else:
+					cur.execute('INSERT INTO leaks (user, pass, list) VALUES (?, ?, ?)', (u, p, args.f))
+					count_new.append(u + ":" + p)
+					con.commit()
 				test = 1
-	cur.close()
-	con.close()
+			except Exception as e:
+				if  "database is locked" in str(e):
+					con.close()
+					sleep(20)
+					con = sqlite3.connect("leaks.db")
+					cur = con.cursor()
+				else:
+					errors.append(u + ':' + p)
+					print(e)
+					test = 1
 
 def ddbb_search(args_s):
 	test = "SELECT * FROM leaks WHERE user LIKE '%{}%' OR pass LIKE '%{}%'".format(args_s, args_s)
@@ -80,34 +81,46 @@ if __name__ == '__main__':
 			con.close()
 			print("DDBB leaks.db creada con exito")
 	elif args.f:
-		f = open(args.f, "r", errors="ignore")
-		ff = f.read().split("\n")
-		f.close()
-		prog = len(ff)
-		bar = Bar("Importando y procesando", max=prog)
-		count_exists = []
-		count_new = []
-		errors = []
-		for user_leak in ff:
-			while threading.active_count() > args.T:
-				sleep(0.001)
-			if len(user_leak):
-				try:
-					us, ps = user_leak.split(":", 1)
-					t = threading.Thread(target=ddbb_upi, args=(us,ps))
-					t.start()
-					#ddbb_upi(us,ps)
-					bar.next()
-				except:
+		try:
+			f = open(args.f, "r", errors="ignore")
+			ff = f.read().split("\n")
+			f.close()
+			prog = len(ff)
+			bar = Bar("Importando y procesando", max=prog)
+			count_exists = []
+			count_new = []
+			errors = []
+			for user_leak in ff:
+				while threading.active_count() > args.T:
+					sleep(0.01)
+				if len(user_leak):
+					try:
+						us, ps = user_leak.split(":", 1)
+						t = threading.Thread(target=ddbb_upi, args=(us,ps))
+						t.start()
+						#ddbb_upi(us,ps)
+						bar.next()
+					except:
+						pass
+				else:
 					pass
-			else:
-				pass
-		bar.finish()
-		print("Nuevas credenciales: {} \n Credenciales repetidas: {}".format(len(count_new), len(count_exists)))
-		if len(errors) > 0:
-			print("Errores con las siguientes credenciales")
-			for i in errors:
-				print(i)
+			bar.finish()
+			print("Nuevas credenciales: {} \n Credenciales repetidas: {}".format(len(count_new), len(count_exists)))
+			if len(errors) > 0:
+				print("Errores con las siguientes credenciales")
+				for i in errors:
+					print(i)
+		except KeyboardInterrupt:
+			bar.finish()
+			print("Nuevas credenciales: {} \n Credenciales repetidas: {}".format(len(count_new), len(count_exists)))
+			if len(errors) > 0:
+				print("Errores con las siguientes credenciales")
+				for i in errors:
+					print(i)
+			if len(count_new) > 1:
+				print("Ultima pass agregada: " + count_new[-1])
+			if len(count_exists) > 1:
+				print("Ultima pass repetida: " + count_exists[-1])
 	elif args.s:
 		ddbb_search(args.s)
 	elif args.su != '' or args.sp != '':
